@@ -1,6 +1,6 @@
 # WSMainSend.py
 # Ben Arnett
-
+# 05/12/2025
 
 import time
 import board
@@ -13,11 +13,8 @@ from adafruit_pm25.i2c import PM25_I2C
 
 
 reset_pin = None
-# If you have a GPIO, its not a bad idea to connect it to the RESET pin
-# reset_pin = DigitalInOut(board.G0)
-# reset_pin.direction = Direction.OUTPUT
-# reset_pin.value = False
 
+# Setup IO pin to turn on and off PMSA03i
 pwr = digitalio.DigitalInOut(board.GP15)
 pwr.direction = digitalio.Direction.OUTPUT
 pwr.value = True
@@ -25,37 +22,38 @@ pwr.value = True
 
 # Create library object, use 'slow' 100KHz frequency!
 i2c = busio.I2C(board.GP9, board.GP8, frequency=100000)
-# Connect to a PM2.5 sensor over I2C
 
-# PMSA003i
+# Connect to a PMSA003i over I2C
 pms = PM25_I2C(i2c, reset_pin)
 print("Found PMSA003i")
 
-# BME688
+# Connect to BME688 over I2C
+# note: BME688 uses the bme680 library
 sensor = adafruit_bme680.Adafruit_BME680_I2C(i2c)
 sensor.seaLevelhPa = 1011
 print("Found BME688")
 
-# Rylr993 lite 
+# Init UART bus for RYLR993 lite
 uart = busio.UART(board.GP0, board.GP1, baudrate=9600)
 print("UART bus enabled")
 
-# PhotoTransistor 
+# PhotoTransistor setup
 pt = analogio.AnalogIn(board.GP26)
 print("Photo Transistor Found")
 
 # Address of Rylr module to send to 
 address = 6
 
+# Function to send LoRa messages with the RYLR
 def rylr_send(message):
     length = len(message)
     send = 'AT+SEND={},{},{}\r\n'.format(address, length, message)
     uart.write(send.encode("ascii"))
     print('Data sent to {}'.format(address))
     
+# Function to apply AQI correction calculations
 def correct_pm25(pm25, humidity, temperature):
     # correction calculations from ChatGPT
-    
     # Humidity correction (EPA formula)
     humidity_correction = 1 + 0.487 * (2.718 ** (0.059 * humidity))
     pm25_corrected = pm25 / humidity_correction
@@ -80,7 +78,6 @@ def ptvoltage(adcin):
     
     # Pico ADC is 12 bits, so need to scale to 16 bits to work with CircuitPython's API
     return (steps * 3.3) / 65536
-    #						2^16
     
 # Main Loop
 while True:
@@ -97,11 +94,13 @@ while True:
         print("Unable to read from sensor, retrying...")
         continue
     
-    # get raw aqi
+    # get raw PM 2.5 concentration and apply corrections
     
     pms_data = pms.read()
     pm25_raw = pms_data["pm25 standard"]
-
+    pm25_corrected = correct_pm25(pm25_raw, humidity, temperature)
+	
+    # get BME688 sensor data
     humidity = sensor.relative_humidity
     temperature = sensor.temperature
     pressure = sensor.pressure
@@ -109,9 +108,6 @@ while True:
     
     # get PhotoTransistor Voltage
     ptvolt = ptvoltage(pt)
-    
-    # Apply correction
-    pm25_corrected = correct_pm25(pm25_raw, humidity, temperature)
     
     # Apply significant figures
     pm25_corrected = round(pm25_corrected) 
@@ -130,6 +126,7 @@ while True:
     pwr.value = False
     print("Turned off PMSA, light sleeping")
     # Light sleep till next reading
-    time.sleep(30) # change to 15 mins / 870s off, 30ish on
+    time.sleep(866) # Sleep 14m 26s (15 mins between data transmissions)
+		    # ^ account for 30s PMSA on time & 4s light volt reading
         
         

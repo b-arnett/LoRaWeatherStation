@@ -28,14 +28,12 @@ whtled = pwmio.PWMOut(board.GP3, frequency=5000, duty_cycle=0)
 servo_a_pin = pwmio.PWMOut(board.GP28, frequency=50)
 servo_a = servo.Servo(servo_a_pin, min_pulse=1000, max_pulse=2000)
 
-# pulse lights, servo to show they're functioning
+# 'Breathe' leds once, modulate servo to verify function
 for i in range(100):
         if i < 50:
             whtled.duty_cycle = int(i * 2 * 65535 / 100)  # Up
-            #grnled.duty_cycle = 65535 - int(i * 2 * 65535 /100) # Down
         else:
             whtled.duty_cycle = 65535 - int((i - 50) * 2 * 65535 / 100)  # Down
-            #grnled.duty_cycle = int((i-50) * 2 * 65535 / 100) # Up
         time.sleep(0.025)
 
 whtled.duty_cycle = 0
@@ -102,9 +100,7 @@ def parse_sensor_data(data: str) -> dict:
             result[key] = value
     return result # returns a dictionary
 
-
-
-# Change interior conditions
+# Function to change interior conditions
 def interior(d):
     light = d['L']
     # If its pretty bright, open blinds and turn off lights
@@ -124,7 +120,7 @@ def interior(d):
     return
 
 
-# Update stats on display 
+# Function to update stats on display 
 def lcddisplay(d):
     if recieved == False:
         lcd.clear()
@@ -148,6 +144,7 @@ def lcddisplay(d):
     # T:00C Light:00%
     # _AQI:000 RH:00%
 
+# Format data to write properly
 def lcdform(number):
     stringout = ""
     if number < 10:
