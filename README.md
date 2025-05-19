@@ -14,6 +14,9 @@ This repository contains code, STL cad files, notes, and pictures for a Remote w
 - Documents contains pictures, notebook scans, and other documentation accumulated during this projects development.
 - WebServer folder has code for the additional, SeeedStudio Xiao ESP32C6 based web server that hosts a simple stats page and graph.     
 
+### Example of how the web server displays
+![Alt text](Documents/Photos/WebPage.png)
+
 ### To be added:
 - Commenting on test programs
 - Additional project documentation
