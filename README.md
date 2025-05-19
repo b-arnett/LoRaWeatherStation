@@ -10,9 +10,9 @@ This repository contains code, STL cad files, notes, and pictures for a Remote w
 
 - WeatherStation folder contains all code associated with the Weather Station.  WSMainSend.py is the finalized, tested and working code.  Other files are test programs.
 - SmartHouse folder contains all code associated with the Smart House.  ModelComplete.py is the finalized, tested and working code.  Other files are test programs.
-- LoRaTests folder contains test code for the RYLR993 lite lora modules.
+- LoRaTests folder contains test code for the using RYLR993 lite lora modules with CircuitPython.
 - Documents contains pictures, notebook scans, and other documentation accumulated during this projects development.
-- WebServer folder has code for the additional, SeeedStudio Xiao ESP32C6 based web server that hosts a simple stats page and graph.     
+- WebServer folder has code and cad files for the additional, SeeedStudio Xiao ESP32C6 based web server that hosts a simple stats page and graph.     
 
 ### Example of how the web server displays
 ![Alt text](Documents/Photos/WebPage.png)
