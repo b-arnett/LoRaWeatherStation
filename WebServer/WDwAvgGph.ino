@@ -1,4 +1,4 @@
-// WSmDNSui
+// WSmDNSGraph
 
 
 #include <WiFi.h>
@@ -7,6 +7,7 @@
 #include "secrets.h"
 #include <DNSServer.h>
 #include <ESPmDNS.h>
+#include <Ticker.h>
 
 #define LORA_RX 17
 #define LORA_TX 16
@@ -29,6 +30,20 @@ struct WeatherData {
   int rssi;
 };
 
+String latestData = "";
+float latestTemp = 0.0;
+
+const int maxDataPoints = 20;
+float temperatureData[maxDataPoints];
+int tempIndex = 0;
+
+String getContentType(String filename) {
+  if (filename.endsWith(".htm") || filename.endsWith(".html")) return "text/html";
+  else if (filename.endsWith(".css")) return "text/css";
+  else if (filename.endsWith(".js")) return "application/javascript";
+  return "text/plain";
+}
+
 WeatherData dataBuffer[MAX_RECORDS];
 int bufferSize = 0;
 WebServer server(80);
@@ -38,71 +53,7 @@ DNSServer dnsServer;
 const byte DNS_PORT = 53;
 const char* localHostname = "loraweather";
 
-void setup() {
-  Serial.begin(115200);
-  Serial1.begin(115200, SERIAL_8N1, LORA_RX, LORA_TX);
-  Serial.println("LoRa Parser Ready");
 
-  // Before WiFi.begin()
-  WiFi.mode(WIFI_AP_STA);  // allow AP and STA mode together
-  WiFi.setHostname(localHostname);  // for mDNS when connected to other networks
-
-  // Start WiFi AP
-  WiFi.softAP("WeatherNode", "weather123");
-
-  // Start DNS redirect for captive portal
-  dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
-
-
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.print("Connecting to WiFi");
-  unsigned long startAttempt = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nConnected to WiFi!");
-    Serial.print("Web server IP address: ");
-    Serial.println(WiFi.localIP());
-    if (MDNS.begin(localHostname)) {
-      Serial.println("mDNS responder started");
-      Serial.print("You can access via http://");
-      Serial.print(localHostname);
-      Serial.println(".local");
-    } else {
-      Serial.println("Error setting up MDNS");
-    }
-    isCaptivePortal = false;
-  } else {
-    Serial.println("\nWiFi failed. Starting Access Point...");
-    isCaptivePortal = true;
-    WiFi.softAP("WeatherNode", "weather1234");
-    IPAddress AP_IP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
-    Serial.println(AP_IP);
-  }
-
-  configTzTime("PST8PDT,M3.2.0,M11.1.0", "pool.ntp.org");
-  server.on("/", handleRoot);
-  server.begin();
-  Serial.println("Web server started.");
-
-  server.onNotFound([]() {
-    server.sendHeader("Location", "/", true);
-    server.send(302, "text/plain", "");
-  });
-}
-
-void loop() {
-  readLoRaData();
-  server.handleClient();
-  dnsServer.processNextRequest();
-  if (Serial.available()) {
-    Serial1.write(Serial.read());
-  }
-}
 
 String getLocalTimeString() {
   struct tm timeinfo;
@@ -162,6 +113,9 @@ void parseLoRaMessage(String message) {
       getLocalTime(&timeinfo);
       w.epoch = mktime(&timeinfo);
 
+      temperatureData[tempIndex] = w.temperature;
+      tempIndex = (tempIndex + 1) % maxDataPoints;
+
       if (bufferSize < MAX_RECORDS) {
         dataBuffer[bufferSize++] = w;
       } else {
@@ -211,7 +165,45 @@ WeatherData parseWeatherString(String input, String timestamp) {
     data.lightperc = data.light * 30.77;
     start = end + 1;
   }
+  
   return data;
+}
+
+String getAveragesHTML() {
+  time_t now;
+  struct tm timeinfo;
+  getLocalTime(&timeinfo);
+  now = mktime(&timeinfo);
+
+  float sumAQI = 0, sumTemp = 0, sumHum = 0, sumPress = 0, sumAlt = 0, sumLight = 0, sumLightperc = 0;
+  int count = 0;
+
+  for (int i = 0; i < bufferSize; i++) {
+    if (difftime(now, dataBuffer[i].epoch) <= 3600) {
+      sumAQI += dataBuffer[i].aqi;
+      sumTemp += dataBuffer[i].temperature;
+      sumHum += dataBuffer[i].humidity;
+      sumPress += dataBuffer[i].pressure;
+      sumAlt += dataBuffer[i].altitude;
+      sumLight += dataBuffer[i].light;
+      sumLightperc += dataBuffer[i].lightperc;
+      count++;
+    }
+  }
+
+  if (count == 0) return "<p>No recent data to average.</p>";
+
+  String html = "<table><tr><th>Metric</th><th>Average</th></tr>";
+  html += "<tr><td>AQI</td><td>" + String(sumAQI / count, 1) + "</td></tr>";
+  html += "<tr><td>Temperature (°C)</td><td>" + String(sumTemp / count, 1) + "</td></tr>";
+  html += "<tr><td>Humidity (%)</td><td>" + String(sumHum / count, 1) + "</td></tr>";
+  html += "<tr><td>Pressure (hPa)</td><td>" + String(sumPress / count, 1) + "</td></tr>";
+  html += "<tr><td>Altitude (m)</td><td>" + String(sumAlt / count, 1) + "</td></tr>";
+  html += "<tr><td>Light (V)</td><td>" + String(sumLight / count, 2) + "</td></tr>";
+  html += "<tr><td>Light (%)</td><td>" + String(sumLightperc / count, 1) + "</td></tr>";
+  html += "</table>";
+
+  return html;
 }
 
 void printHourlyAverages() {
@@ -298,42 +290,144 @@ void handleRoot() {
   html += "<script>setTimeout(()=>location.reload(),60000);</script>";
   html += "</body></html>";
 
+  String graphs = R"rawliteral(
+      <title>Weather Dashboard</title>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+      <style>
+        body { font-family: sans-serif; text-align: center; margin: 20px; }
+        canvas { max-width: 600px; margin: auto; }
+      </style>
+    </head>
+    <body>
+      <h1>LoRa Weather Dashboard</h1>
+      <div id="dataDisplay">Loading latest data...</div>
+      <canvas id="tempChart" width="600" height="300"></canvas>
+
+      <script>
+        let tempChart;
+
+        async function fetchData() {
+          const res = await fetch('/data');
+          const json = await res.json();
+
+          document.getElementById('dataDisplay').innerText = json.latest;
+
+          if (!tempChart) {
+            const ctx = document.getElementById('tempChart').getContext('2d');
+            tempChart = new Chart(ctx, {
+              type: 'line',
+              data: {
+                labels: json.history.map((_, i) => i + 1),
+                datasets: [{
+                  label: 'Temperature (°C)',
+                  data: json.history,
+                  borderColor: 'orange',
+                  fill: false
+                }]
+              },
+              options: {
+                responsive: true,
+                scales: {
+                  y: { beginAtZero: true }
+                }
+              }
+            });
+          } else {
+            tempChart.data.labels = json.history.map((_, i) => i + 1);
+            tempChart.data.datasets[0].data = json.history;
+            tempChart.update();
+          }
+        }
+
+        setInterval(fetchData, 2000);
+        fetchData();
+      </script>
+    </body>
+    </html>
+  )rawliteral";
+  html += graphs;
   server.send(200, "text/html", html);
 }
 
-String getAveragesHTML() {
-  time_t now;
-  struct tm timeinfo;
-  getLocalTime(&timeinfo);
-  now = mktime(&timeinfo);
+void handleDataJson() {
+  String json = "{";
+  json += "\"latest\":\"" + latestData + "\",";
+  json += "\"history\":[";
+  for (int i = 0; i < maxDataPoints; i++) {
+    if (i > 0) json += ",";
+    json += String(temperatureData[(tempIndex + i) % maxDataPoints]);
+  }
+  json += "]}";
+  server.send(200, "application/json", json);
+}
 
-  float sumAQI = 0, sumTemp = 0, sumHum = 0, sumPress = 0, sumAlt = 0, sumLight = 0, sumLightperc = 0;
-  int count = 0;
 
-  for (int i = 0; i < bufferSize; i++) {
-    if (difftime(now, dataBuffer[i].epoch) <= 3600) {
-      sumAQI += dataBuffer[i].aqi;
-      sumTemp += dataBuffer[i].temperature;
-      sumHum += dataBuffer[i].humidity;
-      sumPress += dataBuffer[i].pressure;
-      sumAlt += dataBuffer[i].altitude;
-      sumLight += dataBuffer[i].light;
-      sumLightperc += dataBuffer[i].lightperc;
-      count++;
-    }
+
+void setup() {
+  Serial.begin(115200);
+  Serial1.begin(115200, SERIAL_8N1, LORA_RX, LORA_TX);
+  Serial.println("LoRa Parser Ready");
+
+  // Before WiFi.begin()
+  WiFi.mode(WIFI_AP_STA);  // allow AP and STA mode together
+  WiFi.setHostname(localHostname);  // for mDNS when connected to other networks
+
+  // Start WiFi AP
+  WiFi.softAP("WeatherNode", "weather123");
+
+  // Start DNS redirect for captive portal
+  dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+
+
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.print("Connecting to WiFi");
+  unsigned long startAttempt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+    delay(500);
+    Serial.print(".");
   }
 
-  if (count == 0) return "<p>No recent data to average.</p>";
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConnected to WiFi!");
+    Serial.print("Web server IP address: ");
+    Serial.println(WiFi.localIP());
+    if (MDNS.begin(localHostname)) {
+      Serial.println("mDNS responder started");
+      Serial.print("You can access via http://");
+      Serial.print(localHostname);
+      Serial.println(".local");
+    } else {
+      Serial.println("Error setting up MDNS");
+    }
+    isCaptivePortal = false;
+  } else {
+    Serial.println("\nWiFi failed. Starting Access Point...");
+    isCaptivePortal = true;
+    WiFi.softAP("WeatherNode", "weather1234");
+    IPAddress AP_IP = WiFi.softAPIP();
+    Serial.print("AP IP address: ");
+    Serial.println(AP_IP);
+  }
 
-  String html = "<table><tr><th>Metric</th><th>Average</th></tr>";
-  html += "<tr><td>AQI</td><td>" + String(sumAQI / count, 1) + "</td></tr>";
-  html += "<tr><td>Temperature (°C)</td><td>" + String(sumTemp / count, 1) + "</td></tr>";
-  html += "<tr><td>Humidity (%)</td><td>" + String(sumHum / count, 1) + "</td></tr>";
-  html += "<tr><td>Pressure (hPa)</td><td>" + String(sumPress / count, 1) + "</td></tr>";
-  html += "<tr><td>Altitude (m)</td><td>" + String(sumAlt / count, 1) + "</td></tr>";
-  html += "<tr><td>Light (V)</td><td>" + String(sumLight / count, 2) + "</td></tr>";
-  html += "<tr><td>Light (%)</td><td>" + String(sumLightperc / count, 1) + "</td></tr>";
-  html += "</table>";
+  configTzTime("PST8PDT,M3.2.0,M11.1.0", "pool.ntp.org");
 
-  return html;
+  server.on("/", handleRoot);
+  server.on("/data", handleDataJson);
+  server.begin();
+  Serial.println("Web server started.");
+
+  server.onNotFound([]() {
+    server.sendHeader("Location", "/", true);
+    server.send(302, "text/plain", "");
+  });
+}
+
+void loop() {
+  readLoRaData();
+
+  server.handleClient();
+  dnsServer.processNextRequest();
+  if (Serial.available()) {
+    Serial1.write(Serial.read());
+  }
 }
