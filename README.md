@@ -10,3 +10,6 @@ This repository contains code, STL cad files, notes, and pictures for a Remote w
 - LoRaTests folder contains test code for the RYLR993 lite lora modules.
 - Documents contains pictures, notebook scans, and other documentation accumulated during this projects development.
 
+### To be added:
+- Commenting on test programs
+- Additional project documentation
