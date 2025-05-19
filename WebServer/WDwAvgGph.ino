@@ -1,10 +1,16 @@
 // WSmDNSGraph
+// Ben Arnett
+// 05/18/2025
 
+// PRIMARILY WRITTEN BY CHATGPT
+// small syntax changes and formatting by B. Arnett
 
 #include <WiFi.h>
 #include <time.h>
 #include <WebServer.h>
 #include "secrets.h"
+// Add a secrets.h file to store WiFi login
+// otherwise edit params. under setup() > WiFi.begin()
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <Ticker.h>
