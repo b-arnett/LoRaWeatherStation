@@ -3,7 +3,7 @@
 
 ![Alt text](Documents/Photos/BothSystems1.HEIC)
 
-This repository contains code, STL cad files, notes, and pictures for a Remote weather station and 'smart' home that I designed.  This project operates on Raspberry Pi Pico 2s and uses RYLR993 lite LoRa modules for the communication method between the weather station and model house.  The use of these modules is pretty simple with the use of AT+ commands and initial range tests showed 1000+ feet in urban environment, and easily over 1 mile in a rural environment.   
+This repository contains code, STL cad files, notes, and pictures for a Remote weather station and 'smart' home that I designed.  This project operates on Raspberry Pi Pico 2s and uses RYLR993 lite LoRa modules for the communication method between the weather station and model house.  The use of these modules is pretty simple with the use of AT+ commands and initial range tests showed 1000+ feet in urban environment, and 1500 feet in a rural area with strong signal strength.   
 
 ## Repo 'map'
 ### Each system has Code and CAD subfolders for related content
